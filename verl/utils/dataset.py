@@ -14,6 +14,7 @@
 
 import math
 import os
+import json
 from collections import defaultdict
 from io import BytesIO
 from typing import Any, Optional, Union
@@ -306,4 +307,110 @@ class RLHFDataset(Dataset):
         example["position_ids"] = position_ids
         example["raw_prompt_ids"] = raw_prompt_ids
         example["ground_truth"] = example.pop(self.answer_key)
+        return example
+
+class OpenCUADataSet(RLHFDataset):
+    def __init__(
+        self,
+        data_path: str,
+        tokenizer: PreTrainedTokenizer,
+        processor: Optional[ProcessorMixin],
+        max_prompt_length: int = 6144,
+        truncation: str = "error",
+        min_pixels: Optional[int] = None,
+        max_pixels: Optional[int] = None,
+    ):
+        self.tokenizer = tokenizer
+        self.processor = processor
+        self.max_prompt_length = max_prompt_length
+        self.truncation = truncation
+        self.min_pixels = min_pixels
+        self.max_pixels = max_pixels
+
+        if "@" in data_path:
+            data_path, data_split = data_path.split("@")
+        else:
+            data_split = "train"
+
+        with open(data_path, "r") as f:
+            self.dataset = json.load(f)
+
+    def _build_messages(self, example: dict[str, Any]) -> list[dict[str, Any]]:
+        image_content = []
+
+        for _ in range(len(example["images"])):
+            image_content.append({
+                "type": "image"
+            })
+        
+        messages = [
+            {
+                "role": "user",
+                "content": image_content + [{"type": "text", "text": f"{example['instruction']}\n{example['input'].replace('<image>', '')}"}]
+            }
+        ]
+        
+        return messages
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, index):
+        example: dict = self.dataset[index]
+        messages = self._build_messages(example)
+
+        prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+        images = example["images"]
+        processed_images = [] if len(images) != 0 else None  # text-only data
+        for image in images:
+            processed_images.append(process_image(image, self.min_pixels, self.max_pixels))
+
+        model_inputs = self.processor(processed_images, [prompt], add_special_tokens=False, return_tensors="pt")
+        input_ids = model_inputs.pop("input_ids")[0]
+        attention_mask = model_inputs.pop("attention_mask")[0]
+        example["multi_modal_data"] = {"images": images}
+
+        if self.processor is not None and "Qwen2VLImageProcessor" in self.processor.image_processor.__class__.__name__:
+            # qwen-vl mrope
+            if "Qwen3VLProcessor" in self.processor.__class__.__name__:
+                from ..models.transformers.qwen3_vl import get_rope_index
+            else:
+                from ..models.transformers.qwen2_vl import get_rope_index
+
+            vision_position_ids = get_rope_index(
+                self.processor,
+                input_ids=input_ids,
+                image_grid_thw=model_inputs.get("image_grid_thw", None),
+                video_grid_thw=model_inputs.get("video_grid_thw", None),
+                second_per_grid_ts=model_inputs.get("second_per_grid_ts", None),
+                attention_mask=attention_mask,
+            )  # (3, seq_length)
+            text_position_ids = torch.arange(len(input_ids)).unsqueeze(0)  # (1, seq_length)
+            position_ids = torch.cat((text_position_ids, vision_position_ids), dim=0)  # (4, seq_length)
+        else:
+            position_ids = torch.clip(attention_mask.cumsum(dim=0) - 1, min=0, max=None)  # (seq_length,)
+
+        input_ids, attention_mask, position_ids = VF.postprocess_data(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            max_length=self.max_prompt_length,
+            pad_token_id=self.tokenizer.pad_token_id,
+            left_pad=True,
+            truncation=self.truncation,
+        )
+        raw_prompt_ids = self.tokenizer.encode(prompt, add_special_tokens=False)
+        if len(raw_prompt_ids) > self.max_prompt_length:
+            if self.truncation == "left":
+                raw_prompt_ids = raw_prompt_ids[-self.max_prompt_length :]
+            elif self.truncation == "right":
+                raw_prompt_ids = raw_prompt_ids[: self.max_prompt_length]
+            elif self.truncation == "error":
+                raise RuntimeError(f"Prompt length {len(raw_prompt_ids)} is longer than {self.max_prompt_length}.")
+
+        example["input_ids"] = input_ids
+        example["attention_mask"] = attention_mask
+        example["position_ids"] = position_ids
+        example["raw_prompt_ids"] = raw_prompt_ids
+        example["ground_truth"] = example["output"]
         return example
