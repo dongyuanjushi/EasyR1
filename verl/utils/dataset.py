@@ -336,20 +336,19 @@ class OpenCUADataSet(RLHFDataset):
             self.dataset = json.load(f)
 
     def _build_messages(self, example: dict[str, Any]) -> list[dict[str, Any]]:
-        image_content = []
-
-        for _ in range(len(example["images"])):
-            image_content.append({
-                "type": "image"
-            })
-        
         messages = [
             {
+                "role": "system",
+                "content": example["system"]
+            },
+            {
                 "role": "user",
-                "content": image_content + [{"type": "text", "text": f"{example['instruction']}\n{example['input'].replace('<image>', '')}"}]
+                "content": example["instruction"]
             }
         ]
-        
+        for message in example["history_messages"]:
+            messages.append(message)
+        messages.append(example["output"])
         return messages
 
     def __len__(self):

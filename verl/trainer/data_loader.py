@@ -74,23 +74,6 @@ def create_dataloader(config: DataConfig, tokenizer: PreTrainedTokenizer, proces
         drop_last=True,
     )
 
-    # val_dataset = RLHFDataset(
-    #     data_path=config.val_files,
-    #     tokenizer=tokenizer,
-    #     processor=processor,
-    #     prompt_key=config.prompt_key,
-    #     answer_key=config.answer_key,
-    #     image_key=config.image_key,
-    #     video_key=config.video_key,
-    #     image_dir=config.image_dir,
-    #     video_fps=config.video_fps,
-    #     max_prompt_length=config.max_prompt_length,
-    #     truncation="right",
-    #     format_prompt=config.format_prompt,
-    #     min_pixels=config.min_pixels,
-    #     max_pixels=config.max_pixels,
-    #     filter_overlong_prompts=config.filter_overlong_prompts,
-    # )
     val_dataset = OpenCUADataSet(
         data_path=config.val_files,
         tokenizer=tokenizer,

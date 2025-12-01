@@ -1,7 +1,7 @@
 data:
   train_files: datasets/opencua_dataset.json@train
   val_files: datasets/opencua_dataset_test.json@test
-  max_prompt_length: 6144
+  max_prompt_length: 8192
   max_response_length: 512
   rollout_batch_size: 512  # equivalent to verl's data.train_batch_size
   mini_rollout_batch_size: null  # equivalent to verl's data.gen_batch_size
@@ -10,7 +10,7 @@ data:
   shuffle: true
   seed: 1
   min_pixels: 262144
-  max_pixels: 2088960
+  max_pixels: 921600
 
 algorithm:
   adv_estimator: grpo
@@ -27,7 +27,7 @@ worker:
   actor:
     global_batch_size: 128  # equivalent to verl's actor.ppo_mini_batch_size
     micro_batch_size_per_device_for_update: 1  # equivalent to verl's actor.ppo_micro_batch_size_per_gpu
-    micro_batch_size_per_device_for_experience: 1  # equivalent to verl's rollout.log_prob_micro_batch_size_per_gpu
+    micro_batch_size_per_device_for_experience: 2  # equivalent to verl's rollout.log_prob_micro_batch_size_per_gpu
     max_grad_norm: 1.0
     padding_free: true
     dynamic_batching: true
@@ -60,6 +60,7 @@ worker:
     enable_chunked_prefill: false
     tensor_parallel_size: 2
     disable_tqdm: false
+    max_num_batched_tokens: 16384
     val_override_config:
       temperature: 0.6
       top_p: 0.95
@@ -78,19 +79,19 @@ worker:
     reward_function: ./examples/reward_function/custom_guir1.py:compute_score
 
 trainer:
-  total_epochs: 10
+  total_epochs: 20
   max_steps: null
-  project_name: easy_r1
+  project_name: opencua_rl
   experiment_name: qwen3_vl_4b_opencua_grpo
   logger: ["file", "wandb"]
   nnodes: 1
   n_gpus_per_node: 8
   max_try_make_batch: 20  # -1 means no limit
-  val_freq: 5  # -1 to disable
+  val_freq: 15  # -1 to disable
   val_before_train: false
   val_only: false
   val_generations_to_log: 3
-  save_freq: 5  # -1 to disable
+  save_freq: 15  # -1 to disable
   save_limit: -1  # -1 to disable
   save_model_only: false
   save_checkpoint_path: null
