@@ -382,7 +382,7 @@ def load_successful_trajectories(trajectory_dir):
                     continue
                 domain = domain_map[domain]
                 domain_cnt[domain] += 1
-                if domain_cnt[domain] >= 30:
+                if domain_cnt[domain] >= 1000:
                     continue
                 else:
                     instruction = trajectory["instruction"]
@@ -410,7 +410,7 @@ def construct_action_only_samples(trajectory):
     length = len(trajectory["traj"])
 
     start_idx = 0
-    end_idx = length
+    end_idx = length - 1
 
     for i in range(start_idx, end_idx):
         history_messages = []
@@ -644,6 +644,8 @@ def main():
         training_action_only_samples.extend(action_only_data_samples_per_trajectory)
 
     print(f"Constructed {len(training_action_only_samples)} action-only samples")
+
+    random.shuffle(training_action_only_samples)
 
     training_data_samples = training_action_only_samples
 
